@@ -1,0 +1,5 @@
+#ignore this folders
+
+.venv/
+*.env
+**/.env
