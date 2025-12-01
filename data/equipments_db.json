@@ -1,0 +1,299 @@
+{
+  "back": {
+    "required_equipment": [
+      "lat pulldown machine",
+      "seated row machine",
+      "pull-up bar",
+      "barbell",
+      "dumbbells",
+      "cable machine"
+    ],
+    "alternatives": {
+      "lat pulldown machine": ["pull-up bar", "resistance band lat pulldown"],
+      "seated row machine": ["dumbbell row", "barbell row"],
+      "barbell": ["dumbbells"],
+      "cable machine": ["resistance bands"]
+    }
+  },
+
+  "chest": {
+    "required_equipment": [
+      "bench",
+      "barbell",
+      "dumbbells",
+      "cable machine",
+      "chest press machine"
+    ],
+    "alternatives": {
+      "bench": ["floor press"],
+      "barbell": ["dumbbells"],
+      "cable machine": ["resistance bands"],
+      "chest press machine": ["dumbbell bench press"]
+    }
+  },
+
+  "biceps": {
+    "required_equipment": [
+      "dumbbells",
+      "barbell",
+      "cable machine",
+      "ez bar"
+    ],
+    "alternatives": {
+      "barbell": ["dumbbells"],
+      "cable machine": ["resistance bands"],
+      "ez bar": ["barbell", "dumbbells"]
+    }
+  },
+
+  "triceps": {
+    "required_equipment": [
+      "cable machine",
+      "dumbbells",
+      "barbell",
+      "ez bar"
+    ],
+    "alternatives": {
+      "cable machine": ["resistance band"],
+      "barbell": ["dumbbells"],
+      "ez bar": ["dumbbells"]
+    }
+  },
+
+  "shoulders": {
+    "required_equipment": [
+      "dumbbells",
+      "barbell",
+      "smith machine",
+      "cable machine"
+    ],
+    "alternatives": {
+      "smith machine": ["barbell shoulder press"],
+      "cable machine": ["resistance bands"],
+      "barbell": ["dumbbells"]
+    }
+  },
+
+  "legs": {
+    "required_equipment": [
+      "squat rack",
+      "leg press machine",
+      "barbell",
+      "dumbbells",
+      "leg extension machine",
+      "hamstring curl machine"
+    ],
+    "alternatives": {
+      "squat rack": ["dumbbell goblet squat"],
+      "leg press machine": ["barbell squat", "goblet squat"],
+      "leg extension machine": ["resistance band leg extension"],
+      "hamstring curl machine": ["stability ball leg curl"]
+    }
+  },
+
+  "back_biceps": {
+    "required_equipment": [
+      "pull-up bar",
+      "lat pulldown machine",
+      "seated row machine",
+      "dumbbells",
+      "barbell"
+    ],
+    "alternatives": {
+      "lat pulldown machine": ["pull-up bar", "resistance bands"],
+      "seated row machine": ["dumbbell row"],
+      "barbell": ["dumbbells"]
+    }
+  },
+
+  "chest_triceps": {
+    "required_equipment": [
+      "bench",
+      "dumbbells",
+      "barbell",
+      "cable machine"
+    ],
+    "alternatives": {
+      "bench": ["floor press"],
+      "cable machine": ["resistance bands"],
+      "barbell": ["dumbbells"]
+    }
+  },
+
+  "quads_hamstrings": {
+    "required_equipment": [
+      "squat rack",
+      "leg press machine",
+      "leg extension machine",
+      "hamstring curl machine",
+      "dumbbells"
+    ],
+    "alternatives": {
+      "squat rack": ["goblet squat"],
+      "leg press machine": ["barbell squat"],
+      "hamstring curl machine": ["stability ball leg curl"]
+    }
+  },
+
+  "delts_traps": {
+    "required_equipment": [
+      "dumbbells",
+      "cable machine",
+      "barbell",
+      "smith machine"
+    ],
+    "alternatives": {
+      "smith machine": ["barbell overhead press"],
+      "cable machine": ["resistance bands"]
+    }
+  },
+
+  "chest_day": {
+    "required_equipment": [
+      "bench",
+      "barbell",
+      "dumbbells",
+      "cable machine"
+    ],
+    "alternatives": {
+      "bench": ["floor press"],
+      "barbell": ["dumbbells"],
+      "cable machine": ["resistance bands"]
+    }
+  },
+
+  "back_day": {
+    "required_equipment": [
+      "lat pulldown machine",
+      "seated row machine",
+      "pull-up bar",
+      "barbell",
+      "dumbbells"
+    ],
+    "alternatives": {
+      "lat pulldown machine": ["pull-up bar"],
+      "seated row machine": ["dumbbell row"]
+    }
+  },
+
+  "arms_day": {
+    "required_equipment": [
+      "dumbbells",
+      "barbell",
+      "cable machine",
+      "ez bar"
+    ],
+    "alternatives": {
+      "cable machine": ["resistance bands"],
+      "barbell": ["dumbbells"]
+    }
+  },
+
+  "legs_day": {
+    "required_equipment": [
+      "squat rack",
+      "leg press machine",
+      "leg extension machine",
+      "hamstring curl machine",
+      "dumbbells"
+    ],
+    "alternatives": {
+      "leg press machine": ["goblet squat"],
+      "hamstring curl machine": ["stability ball leg curl"]
+    }
+  },
+
+  "shoulders_day": {
+    "required_equipment": [
+      "dumbbells",
+      "barbell",
+      "cable machine",
+      "smith machine"
+    ],
+    "alternatives": {
+      "smith machine": ["barbell shoulder press"],
+      "cable machine": ["resistance bands"]
+    }
+  },
+
+  "push": {
+    "required_equipment": [
+      "bench",
+      "barbell",
+      "dumbbells",
+      "cable machine"
+    ],
+    "alternatives": {
+      "bench": ["floor press"],
+      "cable_machine": ["resistance bands"]
+    }
+  },
+
+  "pull": {
+    "required_equipment": [
+      "lat pulldown machine",
+      "seated row machine",
+      "pull-up bar",
+      "dumbbells"
+    ],
+    "alternatives": {
+      "lat pulldown machine": ["resistance bands"],
+      "seated row machine": ["dumbbell row"]
+    }
+  },
+
+  "legs_split": {
+    "required_equipment": [
+      "squat rack",
+      "leg press machine",
+      "leg extension machine",
+      "hamstring curl machine",
+      "dumbbells"
+    ],
+    "alternatives": {
+      "leg extension machine": ["resistance bands"],
+      "hamstring curl machine": ["stability ball leg curl"]
+    }
+  },
+
+  "upper": {
+    "required_equipment": [
+      "bench",
+      "barbell",
+      "dumbbells",
+      "cable machine",
+      "pull-up bar"
+    ],
+    "alternatives": {
+      "bench": ["floor press"],
+      "pull-up bar": ["lat pulldown machine"]
+    }
+  },
+
+  "lower": {
+    "required_equipment": [
+      "squat rack",
+      "leg press machine",
+      "hamstring curl machine",
+      "dumbbells"
+    ],
+    "alternatives": {
+      "leg press machine": ["goblet squat"],
+      "hamstring curl machine": ["stability ball leg curl"]
+    }
+  },
+
+  "full_body": {
+    "required_equipment": [
+      "barbell",
+      "dumbbells",
+      "bench",
+      "cable machine",
+      "pull-up bar"
+    ],
+    "alternatives": {
+      "cable machine": ["resistance bands"],
+      "barbell": ["dumbbells"]
+    }
+  }
+}
