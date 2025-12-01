@@ -1,437 +1,350 @@
+# agents.py
+# Full 6-agent workout pipeline with robust logging and developer-friendly debug traces.
+# This file logs an external decision trace for debugging (NOT model internals).
+
 from google.adk.agents import Agent, SequentialAgent, ParallelAgent
 from google.adk.tools import google_search
 from google.adk.runners import InMemoryRunner
-import json
 import os
+import json
+import datetime
+import pathlib
+import logging
+from typing import Any, Dict, Optional
 
-# ============================================
-# MULTI-AGENT WORKOUT SYSTEM
-# For use with: adk run workout_agent.py
-# ============================================
+# ---------------------------
+# Directories & paths
+# ---------------------------
+BASE_DIR = pathlib.Path.cwd()
+MEMORY_DIR = BASE_DIR / "memory"
+LOG_DIR = BASE_DIR / "logs"
+DATA_DIR = BASE_DIR / "data"
+MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+WORKOUT_HISTORY_PATH = MEMORY_DIR / "workout_history.json"
+DECISION_LOG_PATH = LOG_DIR / f"decision_trace_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+LAST_RUN_OUTPUTS_PATH = LOG_DIR / "last_run_outputs.json"
+
+# ---------------------------
+# Logging setup (file + console)
+# ---------------------------
+logger = logging.getLogger("workout_pipeline")
+logger.setLevel(logging.DEBUG)
+
+# File handler (detailed debug)
+fh = logging.FileHandler(DECISION_LOG_PATH, encoding="utf-8")
+fh.setLevel(logging.DEBUG)
+fh_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+fh.setFormatter(fh_formatter)
+logger.addHandler(fh)
+
+# Console handler (info-level)
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+ch_formatter = logging.Formatter("[%(levelname)s] %(message)s")
+ch.setFormatter(ch_formatter)
+logger.addHandler(ch)
 
 
-def equipments_json_loader(path):
-    """Load equipment database from JSON file"""
+def log_trace(message: str, level: str = "info") -> None:
+    """
+    Central logging helper. Use level 'debug', 'info', 'warning', 'error'.
+    """
+    if level == "debug":
+        logger.debug(message)
+    elif level == "warning":
+        logger.warning(message)
+    elif level == "error":
+        logger.error(message)
+    else:
+        logger.info(message)
+
+
+# ---------------------------
+# JSON helpers (safe)
+# ---------------------------
+def write_json(path: pathlib.Path, data: Any) -> None:
+    """Write JSON to file (overwrites)."""
     try:
-        with open(path, "r") as f:
-            return json.load(f)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        log_trace(f"Wrote JSON to {path}", "debug")
+    except Exception as e:
+        log_trace(f"Failed to write JSON to {path}: {e}", "error")
+
+
+def append_json_list(path: pathlib.Path, entry: Any) -> None:
+    """Append an entry to a JSON list file; create file if missing."""
+    try:
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                arr = json.load(f)
+                if not isinstance(arr, list):
+                    log_trace(f"Existing file {path} is not a list — overwriting with a new list.", "warning")
+                    arr = []
+        else:
+            arr = []
+        arr.append(entry)
+        write_json(path, arr)
+        log_trace(f"Appended entry to {path}", "debug")
+    except Exception as e:
+        log_trace(f"Error appending to {path}: {e}", "error")
+
+
+# ---------------------------
+# Equipment DB loader & selector (tool)
+# ---------------------------
+def equipments_json_loader(path: str) -> Dict[str, Any]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            log_trace(f"Loaded equipments DB from {path}", "debug")
+            return data
     except FileNotFoundError:
-        print(f"⚠️ Equipment database not found at: {path}")
+        log_trace(f"Equipment DB not found at {path}. Returning empty DB.", "warning")
         return {}
-    except json.JSONDecodeError:
-        print(f"⚠️ Invalid JSON in: {path}")
+    except json.JSONDecodeError as e:
+        log_trace(f"Equipment DB JSON decode error at {path}: {e}", "error")
+        return {}
+    except Exception as e:
+        log_trace(f"Unexpected error loading equipment DB: {e}", "error")
         return {}
 
 
-def equipment_selector(muscle: str):
+def equipment_selector(muscle: Optional[str]) -> Dict[str, Any]:
     """
-    Select equipment based on target muscle group
-    
-    Args:
-        muscle (str): Target muscle (e.g., 'chest', 'back', 'legs')
-    
-    Returns:
-        dict: Required and alternative equipment
+    Tool: Return equipment recommendations for a muscle.
+    Returns dict with keys: status, muscle, required, alternatives
     """
-    equipments_db = equipments_json_loader(
-        os.path.join(os.getcwd(), "data", "equipments_db.json")
-    )
-    
-    muscle = muscle.lower().strip()
-    
-    if muscle not in equipments_db:
+    muscle_norm = (muscle or "").lower().strip()
+    db = equipments_json_loader(str(DATA_DIR / "equipments_db.json"))
+    log_trace(f"equipment_selector called for muscle='{muscle_norm}'", "debug")
+
+    if not db or muscle_norm not in db:
         return {
             "status": "not_found",
-            "muscle": muscle,
-            "required": ["Dumbbells", "Resistance bands"],
-            "alternatives": ["Bodyweight exercises", "Household items"]
+            "muscle": muscle_norm,
+            "required": ["Dumbbells", "Resistance Bands"],
+            "alternatives": ["Bodyweight variations", "Household objects (water jugs)"]
         }
-    
-    equipments = equipments_db[muscle]
+
+    record = db.get(muscle_norm, {})
     return {
         "status": "success",
-        "muscle": muscle,
-        "required": equipments.get("required_equipment", []),
-        "alternatives": equipments.get("alternatives", [])
+        "muscle": muscle_norm,
+        "required": record.get("required_equipment", []),
+        "alternatives": record.get("alternatives", [])
     }
 
 
-# ============================================
-# AGENT 1: WORKOUT DECODER
-# ============================================
+# ---------------------------
+# Save workout history helper
+# ---------------------------
+def save_workout_history_record(record: Dict[str, Any]) -> None:
+    """
+    Save a workout history record to WORKOUT_HISTORY_PATH as a list.
+    """
+    if not isinstance(record, dict):
+        log_trace("save_workout_history_record called with non-dict; skipping.", "warning")
+        return
+    append_json_list(WORKOUT_HISTORY_PATH, record)
+    log_trace(f"Saved workout history for muscle='{record.get('muscle')}'", "info")
 
+
+# ---------------------------
+# Agent Definitions
+# ---------------------------
+
+# 1) Workout Decoder: collects 4 fields and outputs JSON (decoder_output)
 workout_decoder_agent = Agent(
     name="workout_decoder",
     model="gemini-2.5-flash-lite",
-    
-    description="Friendly fitness assistant that collects workout preferences from users",
-    
+    description="Collects 4 fields (muscle, goal, training_style, experience_level) and outputs JSON.",
     instruction="""
-    You are a warm and knowledgeable personal trainer with 20+ years of experience.
-    
-    🎯 YOUR MISSION:
-    Collect workout preferences from users in a friendly, conversational way.
-    
-    
-    🚦 FIRST INTERACTION - ALWAYS SHOW THIS GREETING:
-    When you receive ANY initial message (like "hi", "hello", or the first workout request), 
-    ALWAYS start by greeting the user and showing them the input format:
-    
-    "Hey there! 👋 Welcome to your personalized workout system!
-    
-    I can help you create a custom workout plan. Here's what I need from you:
-    
-    📋 **Input Format:**
-    
-    1️⃣ **Muscle Group** - What do you want to train?
-       Examples: chest, back, legs, shoulders, arms, abs, full body
-    
-    2️⃣ **Goal** - What are you working towards?
-       Examples: muscle growth, strength, endurance, toning, fat loss
-    
-    3️⃣ **Training Style** - How do you like to train?
-       Examples: traditional sets, supersets, circuits, drop sets, HIIT
-    
-    4️⃣ **Experience Level** - How long have you been training?
-       Examples: beginner, intermediate, advanced
-    
-    
-    💬 **You can tell me in any way that's comfortable:**
-    
-    ✅ Casual: "chest day, want to get bigger, intermediate, love supersets"
-    ✅ Detailed: "I want to train chest for muscle growth using traditional sets, I'm intermediate"
-    ✅ Simple: "chest workout" (I'll ask for missing details)
-    
-    
-    What would you like to train today? 💪"
-    
-    After showing this format ONCE in the conversation, proceed normally.
-    
-    
-    📋 COLLECT THESE 4 PIECES OF INFORMATION:
-    
-    1. **muscle** - Target muscle group(s)
-       Examples: chest, back, legs, shoulders, arms, abs, full body
-    
-    2. **goal** - Training objective
-       Examples: muscle growth, strength, endurance, toning, fat loss
-    
-    3. **training_style** - Preferred training method
-       Examples: traditional sets, supersets, circuits, drop sets, HIIT
-    
-    4. **experience_level** - Training background
-       Examples: beginner, intermediate, advanced
-    
-    
-    🗣️ HOW TO INTERACT:
-    
-    ✅ If user provides ALL 4 fields (even casually):
-       IMMEDIATELY output ONLY this JSON:
-       ```json
-       {
-           "muscle": "chest",
-           "goal": "muscle growth",
-           "training_style": "supersets",
-           "experience_level": "intermediate"
-       }
-       ```
-    
-    ✅ If ANY information is MISSING, ask warmly:
-       "Great start! Just need a few more details:
-       
-       • **Missing field 1:** What about...?
-       • **Missing field 2:** And your...?
-       
-       No worries if you're unsure about anything!"
-    
-    
-    🧠 BE SMART - INTERPRET CASUAL LANGUAGE:
-    - "chest day" → muscle = "chest"
-    - "want to get bigger" → goal = "muscle growth"  
-    - "just started lifting" → experience_level = "beginner"
-    - "love doing supersets" → training_style = "supersets"
-    - "get stronger" → goal = "strength"
-    
-    
-    🚫 CRITICAL RULES:
-    - ONLY collect the 4 data points - nothing more
-    - NEVER create workout plans (that's the next agent's job)
-    - NEVER select equipment (handled by another agent)
-    - Once ALL 4 fields collected → output JSON immediately and STOP
-    - Be encouraging and supportive
-    - Keep responses brief and friendly
-    - Don't overwhelm with too many questions at once
-    
-    
-    Remember: You're the friendly intake specialist. Show the format first, then collect the info! 💪
-    """,
-    
+ROLE:
+You are WorkoutDecoder. Collect EXACTLY these 4 fields from the user:
+- muscle
+- goal
+- training_style
+- experience_level
+
+RULES:
+- Ask ONLY for missing fields.
+- Never repeat a field already provided.
+- Once all fields are present, output ONLY the JSON with these keys and STOP.
+- Do NOT produce workout plans or ask for equipment.
+""",
     output_key="decoder_output"
 )
 
-
-# ============================================
-# AGENT 2: WORKOUT PLANNER
-# ============================================
-
+# 2) Workout Planner: generates plan text from decoder_output (plan_output)
 workout_planner_agent = Agent(
     name="workout_planner",
     model="gemini-2.5-flash-lite",
-    
-    description="Elite bodybuilding coach who designs science-backed workout programs",
-    
+    description="Creates a 6-8 exercise workout plan based on decoder_output.",
     instruction="""
-    You are a veteran strength coach with 20+ years of elite coaching experience.
-    
-    🎯 YOUR MISSION:
-    Design a complete, personalized workout plan based on user preferences.
-    
-    
-    📥 INPUT YOU RECEIVE:
-    The decoder_output JSON with: muscle, goal, training_style, experience_level
-    
-    
-    ⏸️ EXECUTION GATE - READ CAREFULLY:
-    ONLY proceed if decoder_output contains a COMPLETE JSON with ALL 4 fields:
-    {
-        "muscle": "value",
-        "goal": "value",
-        "training_style": "value",
-        "experience_level": "value"
-    }
-    
-    If decoder_output is incomplete, empty, or missing ANY field → DO NOT EXECUTE.
-    Wait silently for complete data. Do not ask questions.
-    
-    
-    📤 WHAT TO CREATE:
-    A workout plan with 6-8 exercises. For EACH exercise:
-    
-    1. **Exercise Name** (clear and specific)
-    2. **Sets x Reps** (appropriate for goal)
-    3. **Tempo** (e.g., 3-0-1-0: 3sec down, explosive up)
-    4. **Rest** (in seconds between sets)
-    5. **Form Tip** (ONE key coaching cue)
-    6. **Why** (Brief purpose/benefit)
-    
-    
-    📋 OUTPUT FORMAT:
-    
-    # 💪 [MUSCLE GROUP] WORKOUT - [GOAL]
-    *Designed for [experience_level] | [training_style] style*
-    
-    ---
-    
-    **Exercise 1: [Name]**
-    • Sets/Reps: 4 x 8-10
-    • Tempo: 3-0-1-0
-    • Rest: 90 seconds
-    • Form Tip: [One key cue]
-    • Why: [Brief benefit]
-    
-    **Exercise 2: [Name]**
-    • Sets/Reps: 3 x 10-12
-    • Tempo: 2-0-1-1
-    • Rest: 60 seconds
-    • Form Tip: [One key cue]
-    • Why: [Brief benefit]
-    
-    [Continue for 6-8 exercises]
-    
-    ---
-    
-    **🔥 Workout Tips:**
-    • [2-3 tips based on their level]
-    • Progressive overload strategy
-    • Recovery recommendation
-    
-    
-    🎯 PROGRAMMING GUIDELINES:
-    
-    **BEGINNER:**
-    - Compound movements focus
-    - 3-4 sets per exercise
-    - 8-12 reps (hypertrophy) or 5-8 (strength)
-    - 90-120 sec rest
-    - Simple, safe exercises
-    
-    **INTERMEDIATE:**
-    - Mix compound + isolation
-    - 3-5 sets per exercise
-    - 6-12 reps depending on goal
-    - 60-90 sec rest
-    - Introduce intensity techniques
-    
-    **ADVANCED:**
-    - Complex variations
-    - 4-5 sets per exercise
-    - Advanced techniques (if training_style matches)
-    - 45-90 sec rest
-    - Precise tempo control
-    
-    **BASED ON GOAL:**
-    - Strength: 3-6 reps, 3-5 min rest, heavy loads
-    - Muscle Growth: 6-12 reps, 60-90s rest, moderate-heavy
-    - Endurance: 12-20 reps, 30-60s rest, lighter loads
-    
-    **BASED ON TRAINING STYLE:**
-    - Traditional: Straight sets with rest
-    - Supersets: Pair exercises (A1/A2), minimal rest between
-    - Circuits: All exercises back-to-back, rest after round
-    - Drop Sets: Note weight reduction (e.g., "drop 20%, 8 more reps")
-    
-    
-    🔍 USE GOOGLE SEARCH:
-    Search: "[muscle] exercises for [goal]" to find:
-    - Evidence-based, effective exercises
-    - Proper form cues
-    - Current best practices
-    
-    
-    🚫 CRITICAL RULES:
-    - DO NOT execute until decoder_output is complete
-    - DO NOT ask questions (you have all data)
-    - DO NOT select equipment (different agent handles that)
-    - MUST create exactly 6-8 exercises
-    - Keep descriptions brief (1-2 sentences)
-    - Use motivational but professional tone
-    
-    
-    Remember: This plan should be gym-ready today! 💪
-    """,
-    
+EXECUTION GATE:
+Run only if decoder_output exists and contains all required fields:
+- muscle, goal, training_style, experience_level
+
+TASK:
+Use the provided fields to create a workout containing 6-8 exercises.
+For each exercise include:
+- Name
+- Sets x Reps (appropriate for goal)
+- Rest
+- Form tip (one cue)
+- Why (brief)
+OUTPUT:
+Return only the workout plan as plain text (no JSON).
+""",
     tools=[google_search],
-    output_key="workout_planned"
+    output_key="plan_output"
 )
 
-
-# ============================================
-# AGENT 3: EQUIPMENT SELECTOR
-# ============================================
-
-equipments_selector_agent = Agent(
-    name="equipments_agent",
+# 3) Equipment Agent: calls equipment_selector tool and returns equipment_output
+equipment_agent = Agent(
+    name="equipment_agent",
     model="gemini-2.5-flash-lite",
-    
-    description="Equipment specialist who recommends optimal gear and alternatives",
-    
+    description="Selects primary and alternative equipment for the target muscle.",
     instruction="""
-    You are an equipment specialist who helps people train with what they have.
-    
-    🎯 YOUR MISSION:
-    Recommend equipment for the target muscle group with practical alternatives.
-    
-    
-    📥 INPUT YOU RECEIVE:
-    The decoder_output JSON containing the "muscle" field
-    
-    
-    ⏸️ EXECUTION GATE - READ CAREFULLY:
-    ONLY proceed if decoder_output contains a COMPLETE JSON with ALL 4 fields:
-    {
-        "muscle": "value",
-        "goal": "value",
-        "training_style": "value",
-        "experience_level": "value"
-    }
-    
-    If decoder_output is incomplete, empty, or missing ANY field → DO NOT EXECUTE.
-    Wait silently for complete data. Do not ask questions.
-    
-    
-    🔧 WHAT TO DO:
-    1. Extract the "muscle" value from decoder_output JSON
-    2. Call equipment_selector(muscle) tool with that muscle
-    3. Present results in helpful, organized format
-    
-    
-    📤 OUTPUT FORMAT:
-    
-    # 🏋️ Equipment for [MUSCLE] Training
-    
-    **🎯 Primary Equipment (Recommended):**
-    • [Equipment 1] - [Why it's ideal]
-    • [Equipment 2] - [Why it's ideal]
-    • [Equipment 3] - [Why it's ideal]
-    
-    **🔄 Alternative Equipment (Great Substitutes):**
-    • [Alternative 1] - [When to use]
-    • [Alternative 2] - [When to use]
-    • [Alternative 3] - [When to use]
-    
-    **💡 Pro Tips:**
-    • Training at home? [Home equipment advice]
-    • On a budget? [Budget options]
-    • Travel-friendly options: [Portable gear]
-    
-    ---
-    *Missing equipment? No worries! Most exercises have bodyweight or household alternatives.*
-    
-    
-    📋 HELPFUL GUIDELINES:
-    
-    **If equipment found (status: "success"):**
-    - List all required equipment with purpose
-    - Provide alternatives with use cases
-    - Note gym-only vs home-friendly items
-    - Suggest helpful accessories
-    
-    **If not found (status: "not_found"):**
-    "I don't have specific data for [muscle] yet, but here's what typically works:
-    
-    **General Equipment:**
-    • Dumbbells - versatile for most movements
-    • Resistance Bands - great for activation
-    • Barbell - for heavy compounds
-    
-    **Bodyweight Alternatives:**
-    • [2-3 bodyweight exercises]
-    
-    Want specific recommendations based on what you have? Just ask!"
-    
-    
-    🚫 CRITICAL RULES:
-    - DO NOT execute until decoder_output is complete
-    - ALWAYS call equipment_selector tool first
-    - DO NOT ask questions (use muscle from decoder_output)
-    - DO NOT create workout plans
-    - Keep it practical and encouraging
-    - If tool fails, provide helpful defaults
-    
-    
-    💡 PERSONALITY:
-    - Helpful and resourceful
-    - Solution-oriented (always offer alternatives)
-    - Budget-conscious
-    - Encouraging about working with what you have
-    
-    
-    Remember: Good equipment helps, but consistency matters most! 🏋️
-    """,
-    
+EXECUTION GATE:
+Run only if decoder_output exists with a 'muscle' value.
+
+TASK:
+Call the equipment_selector tool with decoder_output.muscle.
+Return a short, bullet-style equipment recommendation (primary and alternatives).
+Do not ask user questions.
+""",
     tools=[equipment_selector],
-    output_key="equipment_planned"
+    output_key="equipment_output"
 )
 
+# 4) Validator Agent: checks safety and volume, returns validated_workout
+validator_agent = Agent(
+    name="workout_validator",
+    model="gemini-2.5-flash-lite",
+    description="Validates and adjusts workout for safety/volume/experience level.",
+    instruction="""
+EXECUTION GATE:
+Run only if plan_output exists (a workout plan from planner).
 
-# ============================================
-# PIPELINE ORCHESTRATION
-# ============================================
+TASK:
+- Verify the plan matches the user's experience level and goal.
+- Flag or adjust exercises that seem unsafe for the declared experience level.
+- Ensure total volume is reasonable (no excessive sets/reps).
+- Output the corrected/validated workout plan as plain text.
+""",
+    output_key="validated_workout"
+)
 
-# Parallel Processor: Planner + Equipment run simultaneously after decoder
+# 5) Memory Agent: prepares memory_output JSON (then Python saves it)
+memory_agent = Agent(
+    name="workout_memory",
+    model="gemini-2.5-flash-lite",
+    description="Prepares a JSON record of the workout for persistence.",
+    instruction="""
+EXECUTION GATE:
+Run only if decoder_output and validated_workout both exist.
+
+TASK:
+Produce the following JSON object (exact keys):
+{
+  "muscle": decoder_output.muscle,
+  "goal": decoder_output.goal,
+  "training_style": decoder_output.training_style,
+  "experience_level": decoder_output.experience_level,
+  "workout": validated_workout
+}
+Output only the JSON (no extra text). Python will persist this.
+""",
+    output_key="memory_output"
+)
+
+# 6) Recommender Agent: gives recovery/nutrition/next-day suggestions
+recommender_agent = Agent(
+    name="workout_recommender",
+    model="gemini-2.5-flash-lite",
+    description="Gives nutrition, recovery and next-session recommendations based on validated workout.",
+    instruction="""
+EXECUTION GATE:
+Run only if validated_workout exists.
+
+TASK:
+Provide 4-6 concise bullet points:
+- Recovery advice
+- Post-workout nutrition
+- Warm-up & cool-down
+- Supplement suggestions (optional)
+- Next-day training suggestion
+Output as short bullets (plain text).
+""",
+    output_key="recommendation_output"
+)
+
+# 7) Aggregator Agent: collects all outputs and emits a short bullet-point summary
+aggregator_agent = Agent(
+    name="workout_aggregator",
+    model="gemini-2.5-flash-lite",
+    description="Aggregates decoder_output, validated_workout, equipment_output, memory_output, recommendation_output into a concise bullet summary.",
+    instruction="""
+EXECUTION GATE:
+Run only if all exist:
+- decoder_output
+- validated_workout
+- equipment_output
+- memory_output
+- recommendation_output
+
+TASK:
+Produce a compact bullet-list summary exactly in this structure:
+
+FINAL WORKOUT SUMMARY
+- Muscle: {decoder_output.muscle}
+- Goal: {decoder_output.goal}
+- Style: {decoder_output.training_style}
+- Level: {decoder_output.experience_level}
+
+WORKOUT (validated):
+- [each exercise as: Name — sets×reps — rest]
+
+EQUIPMENT:
+- Primary: ...
+- Alternatives: ...
+
+RECOMMENDATIONS:
+- bullet 1
+- bullet 2
+- bullet 3
+
+MEMORY:
+- "Workout saved."
+
+Output only bullet points, no JSON, no long paragraphs.
+""",
+    output_key="aggregated_output"
+)
+
+# ---------------------------
+# Pipeline orchestration (strict)
+# ---------------------------
 parallel_processor = ParallelAgent(
-    name="ParallelPipeline",
+    name="planner_equipment_parallel",
+    sub_agents=[workout_planner_agent, equipment_agent]
+)
+
+root_agent = SequentialAgent(
+    name="FullWorkoutPipeline",
     sub_agents=[
-        workout_planner_agent,
-        equipments_selector_agent
+        workout_decoder_agent,       # 1. accept user input
+        parallel_processor,          # 2. plan & equipment in parallel (require decoder_output)
+        validator_agent,             # 3. validate (require plan_output)
+        memory_agent,                # 4. prepare memory JSON (require validated_workout + decoder_output)
+        recommender_agent,           # 5. recommendations (require validated_workout)
+        aggregator_agent             # 6. final aggregated bullet summary (require all)
     ]
 )
 
-# Root Pipeline: Decoder → (Planner + Equipment in parallel)
-root_agent = SequentialAgent(
-    name="ExercisePipeline",
-    sub_agents=[
-        workout_decoder_agent,
-        parallel_processor
-    ]
-)
+
