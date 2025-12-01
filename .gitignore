@@ -3,3 +3,7 @@
 .venv/
 *.env
 **/.env
+
+.logs/
+.memory/git
+test.py
